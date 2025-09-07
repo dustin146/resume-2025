@@ -70,7 +70,10 @@ jobs:
 
       # Optional: deploy static site + invalidate CloudFront if you set these two secrets
       - name: Upload frontend to S3
-        if: ${{ secrets.S3_BUCKET != '' && secrets.CLOUDFRONT_DISTRIBUTION_ID != '' }}
+        if: ${{ env.S3_BUCKET != '' && env.CLOUDFRONT_DISTRIBUTION_ID != '' }}
+        env:
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          CLOUDFRONT_DISTRIBUTION_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
         run: |
           aws s3 sync ./frontend "s3://${{ secrets.S3_BUCKET }}" --delete
           aws cloudfront create-invalidation \
