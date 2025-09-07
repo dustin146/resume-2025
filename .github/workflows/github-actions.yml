@@ -50,6 +50,9 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ secrets.AWS_REGION }}
+          role-session-duration: 3600
+          role-session-name: gha-ci
+          audience: sts.amazonaws.com
 
       - name: Set up SAM CLI
         uses: aws-actions/setup-sam@v2
