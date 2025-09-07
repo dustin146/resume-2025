@@ -30,6 +30,8 @@ jobs:
       - name: Run tests
         env:
           PYTHONPATH: backend/src
+          AWS_REGION: us-east-1
+          AWS_DEFAULT_REGION: us-east-1
         run: pytest -q backend/tests
 
 
