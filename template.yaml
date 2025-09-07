@@ -1,0 +1,70 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Cloud Resume Challenge - backend (DynamoDB + Lambda + HTTP API)
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 5
+    MemorySize: 256
+
+Parameters:
+  TableName:
+    Type: String
+    Default: visitor_counter_iac
+  PartitionKeyName:
+    Type: String
+    Default: pk
+
+Resources:
+  CounterTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref TableName
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: !Ref PartitionKeyName
+          AttributeType: S
+      KeySchema:
+        - AttributeName: !Ref PartitionKeyName
+          KeyType: HASH
+          
+  CounterFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./backend/src    
+      Handler: app.handler
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref TableName
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:UpdateItem
+              Resource: !GetAtt CounterTable.Arn
+      Events:
+        GetCount:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /count
+            Method: GET
+        IncCount:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /count
+            Method: POST
+  
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins:
+          - https://dustinumphress.com
+          - https://www.dustinumphress.com
+        AllowMethods: [ GET, POST, OPTIONS ]
+        AllowHeaders: [ Content-Type ] 
