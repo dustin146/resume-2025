@@ -67,4 +67,4 @@ Resources:
           - https://dustinumphress.com
           - https://www.dustinumphress.com
         AllowMethods: [ GET, POST, OPTIONS ]
-        AllowHeaders: [ Content-Type ] 
+        AllowHeaders: [ Content-Type ]
