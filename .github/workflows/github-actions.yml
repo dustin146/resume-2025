@@ -1,18 +1,78 @@
-name: GitHub Actions
-run-name: ${{ github.actor }} is testing out GitHub Actions 🚀
-on: [push]
+name: CI/CD
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+permissions:
+  contents: read
+  id-token: write  # required for OIDC
+
 jobs:
-  Explore-GitHub-Actions:
+  test:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "🎉 The job was automatically triggered by a ${{ github.event_name }} event."
-      - run: echo "🐧 This job is now running on a ${{ runner.os }} server hosted by GitHub!"
-      - run: echo "🔎 The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
-      - name: Check out repository code
-        uses: actions/checkout@v5
-      - run: echo "💡 The ${{ github.repository }} repository has been cloned to the runner."
-      - run: echo "🖥️ The workflow is now ready to test your code on the runner."
-      - name: List files in the repository
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        working-directory: backend
         run: |
-          ls ${{ github.workspace }}
-      - run: echo "🍏 This job's status is ${{ job.status }}."
+          python -m pip install --upgrade pip
+          [ -f requirements.txt ] && pip install -r requirements.txt || true
+          [ -f requirements-dev.txt ] && pip install -r requirements-dev.txt || true
+          pip install pytest
+
+      - name: Run tests
+        working-directory: backend
+        run: pytest -q
+
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: [ test ]
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Set up SAM CLI
+        uses: aws-actions/setup-sam-cli@v2
+
+      - name: Validate template
+        run: sam validate --lint
+
+      - name: Build
+        run: sam build
+        # If your template.yaml is under backend/, uncomment the next line instead:
+        # working-directory: backend
+
+      - name: Deploy
+        run: |
+          sam deploy \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --stack-name crc-counter \
+            --resolve-s3 \
+            --capabilities CAPABILITY_IAM
+
+      # Optional: deploy static site + invalidate CloudFront if you set these two secrets
+      - name: Upload frontend to S3
+        if: ${{ secrets.S3_BUCKET != '' && secrets.CLOUDFRONT_DISTRIBUTION_ID != '' }}
+        run: |
+          aws s3 sync ./frontend "s3://${{ secrets.S3_BUCKET }}" --delete
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}" \
+            --paths "/*"
