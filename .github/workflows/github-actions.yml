@@ -52,7 +52,7 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Set up SAM CLI
-        uses: aws-actions/setup-sam-cli@v2
+        uses: aws-actions/setup-sam@v2
 
       - name: Validate template
         run: sam validate --lint
