@@ -51,3 +51,16 @@ samconfig.toml
 *.xlsx
 *.tar.gz
 backup-*.tar.gz
+
+# IDE settings
+.idea/
+
+# Build artifacts
+*.zip
+.aws-sam/
+
+# Python env/cache
+.venv/
+__pycache__/
+*.pyc
+
