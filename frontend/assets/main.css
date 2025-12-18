@@ -75,3 +75,14 @@ footer { margin: 40px 0 60px; display:flex; justify-content: space-between; font
   .hero{ grid-template-columns:1fr;}
   footer{ flex-direction: column; align-items:flex-start; }
 }
+
+.notes-link a {
+  color: #9aa4b2;          /* muted gray-blue */
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.notes-link a:hover {
+  color: #cfd6e4;
+  text-decoration: underline;
+}
