@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Running a Satisfactory Dedicated Server on AWS (Without Paying $130/Month) — Dustin Umphress</title>
+  <meta name="description" content="A practical write-up on running a Satisfactory dedicated server on AWS using on-demand EC2 + serverless control, focusing on cost and real-world constraints." />
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.6;
+      padding: 24px;
+    }
+    main {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    header {
+      margin-bottom: 28px;
+    }
+    h1 {
+      font-size: clamp(1.6rem, 2.6vw, 2.2rem);
+      margin: 0 0 10px 0;
+      letter-spacing: -0.02em;
+    }
+    .meta {
+      opacity: 0.8;
+      font-size: 0.95rem;
+      margin-top: 0;
+    }
+    hr {
+      border: 0;
+      border-top: 1px solid rgba(127,127,127,0.35);
+      margin: 28px 0;
+    }
+    h2 {
+      font-size: 1.35rem;
+      margin-top: 26px;
+      margin-bottom: 10px;
+      letter-spacing: -0.01em;
+    }
+    p { margin: 12px 0; }
+    ul { margin: 10px 0 10px 22px; }
+    code, pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 0.95em;
+    }
+    pre {
+      padding: 14px;
+      border-radius: 10px;
+      overflow-x: auto;
+      background: rgba(127,127,127,0.12);
+    }
+    a { text-underline-offset: 3px; }
+    .callout {
+      padding: 14px 16px;
+      border-radius: 12px;
+      background: rgba(127,127,127,0.12);
+      margin: 16px 0;
+    }
+    footer {
+      margin-top: 40px;
+      padding-top: 18px;
+      border-top: 1px solid rgba(127,127,127,0.35);
+      opacity: 0.9;
+      font-size: 0.95rem;
+    }
+  </style>
+</head>
+
+<body>
+<main>
+  <header>
+    <h1>Running a Satisfactory Dedicated Server on AWS (Without Paying $130/Month)</h1>
+    <p class="meta">By Dustin Umphress • Notes / write-up</p>
+  </header>
+
+  <p>I didn’t start this project because I wanted to build something impressive. I started it because I was lagging.</p>
+
+  <p>I was playing <strong>Satisfactory</strong> with my brother, who was hosting the game, and I kept rubber-banding. The obvious fix was to run a dedicated server — something I’ve done a bunch of times before.</p>
+
+  <p>What I hadn’t done before was run one on <strong>AWS</strong>. And for a long time, that was intentional.</p>
+
+  <hr />
+
+  <h2>Why AWS Always Felt Like a Bad Idea for Game Servers</h2>
+  <p>Satisfactory is memory-hungry. Realistically you’re looking at around <strong>12–16 GB of RAM</strong>, which on AWS points you toward something like a <code>t3.xlarge</code>. If you leave that running 24/7, you’re staring at roughly <strong>$130/month</strong>.</p>
+
+  <p>That’s hard to justify when you can pay:</p>
+  <ul>
+    <li>~$10/month on a game-focused hosting service, or</li>
+    <li>run it at home on spare hardware.</li>
+  </ul>
+
+  <p>I’ve done both. I’ve run servers on physical machines, cheaper VPS providers, and “click-and-go” game hosts. Those work because the server is always there. You don’t think about lifecycle or cost — you just play.</p>
+
+  <p>AWS is different. You pay for every minute something is running, so historically it felt like the wrong tool for this job.</p>
+
+  <hr />
+
+  <h2>Why I Tried AWS Anyway</h2>
+  <p>Two things pushed me into trying it:</p>
+  <ul>
+    <li>I had just finished my <strong>AWS Solutions Architect</strong> certification.</li>
+    <li>I wanted to build something end-to-end without following a tutorial.</li>
+  </ul>
+
+  <p>Not just “spin up EC2 and install a server.” I wanted to build the VPC, configure networking, control the instance lifecycle intentionally, and treat it like an infrastructure problem.</p>
+
+  <p>The key idea was simple:</p>
+
+  <div class="callout">
+    <p><strong>We only play a few hours a week.</strong> Why would the server run all month?</p>
+  </div>
+
+  <p>If the instance only runs while people are playing, the cost math changes completely. At roughly <strong>$0.17–$0.18/hour</strong>, light usage becomes cheap enough to be worth exploring.</p>
+
+  <hr />
+
+  <h2>The First Wrong Assumption: “Idle Detection Is Easy”</h2>
+  <p>My initial plan was straightforward: detect whether players were connected and shut the server down automatically when nobody was playing.</p>
+
+  <p>I assumed I could do this with standard Linux tools like <code>ss</code> or <code>netstat</code>. That assumption was wrong.</p>
+
+  <p>Satisfactory uses <strong>UDP</strong>, and UDP doesn’t behave like TCP. There’s no clean concept of a session, so tools that are great for TCP didn’t tell me what I needed. My first auto-shutdown logic was basically blind.</p>
+
+  <p>This is where it stopped being “just a game server” and started feeling like a real ops problem.</p>
+
+  <hr />
+
+  <h2>Detecting Activity the Hard Way</h2>
+  <p>Instead of asking “who’s connected?”, I changed the question to:</p>
+
+  <div class="callout">
+    <p><strong>Is real traffic flowing?</strong></p>
+  </div>
+
+  <p>I ended up monitoring network byte deltas via <code>/proc/net/dev</code>, sampling traffic over a rolling window. That gave me a reliable way to distinguish:</p>
+  <ul>
+    <li>real gameplay traffic,</li>
+    <li>background noise,</li>
+    <li>complete inactivity.</li>
+  </ul>
+
+  <p>Once that was in place, automatic shutdown became dependable.</p>
+
+  <hr />
+
+  <h2>Documentation vs Reality: The Port Surprise</h2>
+  <p>I initially followed what I saw in the docs: multiplayer needs <strong>UDP 7777</strong>. So that’s what I opened.</p>
+
+  <p>Clients still couldn’t connect reliably.</p>
+
+  <p>What fixed it wasn’t packet sniffing or anything fancy — I found <strong>newer references</strong> (docs / community write-ups) indicating the server also needs inbound <strong>TCP</strong> on ports <strong>7777</strong> and <strong>8888</strong> for handshake/service communication. Once I opened those and tested, connectivity stabilized immediately.</p>
+
+  <p>The lesson for me was the same as it is in normal infrastructure work:</p>
+  <div class="callout">
+    <p><strong>Docs are a starting point — validation is what matters.</strong></p>
+  </div>
+
+  <hr />
+
+  <h2>Why This Needed a Control Plane</h2>
+  <p>I didn’t want to SSH in every time I wanted to start/stop the server — that defeats the entire point.</p>
+
+  <p>So I built a simple serverless control plane:</p>
+  <ul>
+    <li>Discord slash commands for start/stop/status</li>
+    <li>AWS Lambda + API Gateway behind the scenes</li>
+    <li>Deferred responses to deal with Discord’s 3-second timeout</li>
+    <li>A fail-safe scheduled shutdown so I don’t accidentally leave it running</li>
+  </ul>
+
+  <p>The scheduled shutdown isn’t “elegant,” it’s practical — it prevents the one mistake that turns AWS into a horror story: forgetting something is running.</p>
+
+  <hr />
+
+  <h2>Cost Fear vs Cost Reality</h2>
+  <p>Before doing this, a lot of my AWS cost fear came from the unknown. When you don’t understand what exists, what bills, and how to shut it down, it feels like AWS could surprise you.</p>
+
+  <p>But once you understand what resources you created and when they’re billed, the fear drops. Worst case here is obvious: the instance runs all month and costs ~$130. Not great — but not mysterious.</p>
+
+  <hr />
+
+  <h2>This Was Always an Infrastructure Exercise</h2>
+  <p>I could have built this without ever playing on it, but actually using it is what exposed the real issues — the UDP behavior, the port requirements, and whether the shutdown logic was trustworthy.</p>
+
+  <p>At that point, it wasn’t really about Satisfactory anymore. The game was just the workload. The project was about lifecycle management, cost control, and closing the gap between assumptions and reality.</p>
+
+  <hr />
+
+  <h2>Tradeoffs I Didn’t Try to Optimize</h2>
+  <p>This setup is not something I’d “sell.” For always-on environments, purpose-built game hosting still makes a lot of sense.</p>
+
+  <p>This approach makes sense when:</p>
+  <ul>
+    <li>usage is light or sporadic,</li>
+    <li>you’re okay with on-demand startup,</li>
+    <li>you care more about cost control and learning than convenience.</li>
+  </ul>
+
+  <hr />
+
+  <h2>Would I Build This Again?</h2>
+  <p>For myself? Yes.</p>
+  <p>For other people? Probably not.</p>
+
+  <p>The learning was the point. And it changed how I think about AWS: it’s not bad for game servers — it’s bad for <em>always-on, lightly-used</em> ones. Treat cost as a design input, and the options open up.</p>
+
+  <footer>
+    <p>If you found this useful and you’re curious about the actual implementation, the repo is linked from my GitHub profile.</p>
+  </footer>
+</main>
+</body>
+</html>
